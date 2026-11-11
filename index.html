@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cafetería UAO Express - Prototipo de Innovación</title>
+  
+  <!-- React & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  
+  <!-- Babel Standalone para JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.js"></script>
+
+  <!-- Firebase App & Firestore JS SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            uao: {
+              DEFAULT: '#990000',
+              dark: '#7A0000',
+              light: '#CC0000',
+              soft: '#FFF0F0'
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // Menú Inicial Por Defecto (Campus UAO Cali)
+    const initialMenuItems = [
+      {
+        id: 1,
+        title: "Almuerzo Ejecutivo Autónoma",
+        category: "ejecutivos",
+        price: 15000,
+        time: "10 min",
+        ingredients: "Pechuga a la plancha o carne sudada, arroz, fríjoles, tajada de plátano maduro y ensalada fresca. Incluye sobremesa.",
+        tag: "Plato del Día",
+        tagColor: "bg-uao-soft text-uao border-uao/20",
+        image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80"
+      },
+      {
+        id: 2,
+        title: "Aborrajado Caleño & Gaseosa",
+        category: "tipico",
+        price: 6500,
+        time: "5 min",
+        ingredients: "Plátano maduro crujiente relleno de abundante queso mozzarella fundido. Snack rápido de cafetería.",
+        tag: "Imperdible UAO",
+        tagColor: "bg-amber-100 text-amber-800 border-amber-200",
+        image: "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?auto=format&fit=crop&w=600&q=80"
+      },
+      {
+        id: 3,
+        title: "Bowl Fit Valle del Lili",
+        category: "saludable",
+        price: 16500,
+        time: "12 min",
+        ingredients: "Quinoa, pollo desmechado a las finas hierbas, aguacate, maíz dulce, tomate cherry y vinagreta de la casa.",
+        tag: "Bajo en Calorías",
+        tagColor: "bg-emerald-100 text-emerald-800 border-emerald-200",
+        image: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=600&q=80"
+      },
+      {
+        id: 4,
+        title: "Lulada Caleña Fría (16 oz)",
+        category: "bebidas",
+        price: 5500,
+        time: "3 min",
+        ingredients: "Refrescante lulada tradicional en trozos con hielo fundido, leche condensada opcional y limón.",
+        tag: "Refrescante",
+        tagColor: "bg-lime-100 text-lime-800 border-lime-200",
+        image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?auto=format&fit=crop&w=600&q=80"
+      },
+      {
+        id: 5,
+        title: "Empanadas de Añejo (3 ud)",
+        category: "snack",
+        price: 4500,
+        time: "4 min",
+        ingredients: "Empanadas crujientes de carne y papa criolla acompañadas con ají caleño picante de la casa.",
+        tag: "Favorito Estudiantil",
+        tagColor: "bg-orange-100 text-orange-800 border-orange-200",
+        image: "https://images.unsplash.com/photo-1626777552726-4a6b54c97e46?auto=format&fit=crop&w=600&q=80"
+      }
+    ];
+
+    const UAO_LOCATIONS = [
+      "Cafetería Central (Edificio de Aulas)",
+      "Punto Express (Torre Central)",
+      "Kiosco Deportivo / Canchas",
+      "Cafetería Edificio de Laboratorios"
+    ];
+
+    function App() {
+      const [role, setRole] = useState('user'); // 'user' | 'admin'
+      const [menuItems, setMenuItems] = useState(initialMenuItems);
+      const [cart, setCart] = useState([]);
+      const [selectedCategory, setSelectedCategory] = useState('all');
+      const [pickupLocation, setPickupLocation] = useState(UAO_LOCATIONS[0]);
+      const [paymentMethod, setPaymentMethod] = useState('nequi');
+      const [currentOrder, setCurrentOrder] = useState(null);
+      const [orderStatus, setOrderStatus] = useState(0); 
+      const [showFirebaseModal, setShowFirebaseModal] = useState(false);
+      const [firebaseConnected, setFirebaseConnected] = useState(false);
+      const [jsonConfigInput, setJsonConfigInput] = useState('');
+      const [rawMenuInput, setRawMenuInput] = useState('');
+      const [notification, setNotification] = useState('');
+      
+      const dbRef = useRef(null);
+      const channelRef = useRef(null);
+
+      const triggerNotification = (msg) => {
+        setNotification(msg);
+        setTimeout(() => setNotification(''), 4000);
+      };
+
+      // Inicializar canal multiventana (BroadcastChannel) y Firebase si existe config
+      useEffect(() => {
+        // BroadcastChannel Fallback para sincronización en el mismo navegador
+        if ('BroadcastChannel' in window) {
+          channelRef.current = new BroadcastChannel('uao_menu_channel');
+          channelRef.current.onmessage = (event) => {
+            if (event.data && event.data.type === 'MENU_UPDATE') {
+              setMenuItems(event.data.payload);
+            }
+          };
+        }
+
+        // Cargar Firebase de localStorage si existe
+        const savedFbConfig = localStorage.getItem('uao_firebase_config');
+        if (savedFbConfig) {
+          try {
+            initFirebase(JSON.parse(savedFbConfig));
+          } catch(e) {
+            console.warn("Config de Firebase guardada inválida", e);
+          }
+        }
+      }, []);
+
+      const initFirebase = (configObj) => {
+        try {
+          if (!firebase.apps.length) {
+            firebase.initializeApp(configObj);
+          }
+          dbRef.current = firebase.firestore();
+          setFirebaseConnected(true);
+          
+          // Escuchar cambios en tiempo real desde Firestore
+          dbRef.current.collection('uao_menu').doc('current').onSnapshot((doc) => {
+            if (doc.exists && doc.data().items) {
+              setMenuItems(doc.data().items);
+            }
+          }, (err) => {
+            console.error("Error al escuchar Firestore:", err);
+          });
+
+          triggerNotification("¡Conectado a Firebase Cloud correctamente!");
+        } catch (error) {
+          console.error("Fallo al inicializar Firebase:", error);
+          alert("Error de conexión a Firebase: " + error.message);
+        }
+      };
+
+      const handleSaveFirebaseConfig = () => {
+        if (!jsonConfigInput.trim()) {
+          alert("Por favor pega el código JSON de Firebase.");
+          return;
+        }
+        try {
+          // Limpiar strings si pegaron const firebaseConfig = ...
+          let cleanInput = jsonConfigInput.trim();
+          if (cleanInput.startsWith('const firebaseConfig =')) {
+            cleanInput =
